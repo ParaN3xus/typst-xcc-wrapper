@@ -47,5 +47,5 @@
 - #str(hello)
 - #float.from-bytes(halved)
 
-Typst compiled the C source through `compiler.wasm`, loaded the returned
+Typst compiled the C source through `typst_xcc_compiler.wasm`, loaded the returned
 wasm bytes as a plugin, and executed it.
