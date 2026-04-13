@@ -4,7 +4,7 @@
 
 #let compiled = compile-project(
   (
-    code-file("src/main.c", ```c
+    code-file("main.c", ```c
       #include "typst/export.typst_plugin.h"
 
       static int add_impl(int a, int b) {
@@ -28,7 +28,7 @@
       }
     ```),
   ),
-  entry: "src/main.c",
+  entry: "main.c",
   exports: (
     export("add", args: ("int", "int"), ret: "int"),
     export("measure", args: ("const char*",), ret: "int"),
