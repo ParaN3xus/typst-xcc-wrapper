@@ -1,0 +1,24 @@
+[workspace]
+name = "typst-xcc-wrapper"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+cmake = "4.3.*"
+ninja = "1.12.*"
+clang = "21.*"
+git = "2.*"
+
+[tasks.configure]
+cmd = "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+
+[tasks.build]
+depends-on = ["configure"]
+cmd = "cmake --build build && cmake -E create_symlink build/compile_commands.json compile_commands.json"
+
+[tasks.reconfigure]
+cmd = "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -U*"
+
+[tasks.clean]
+cmd = "cmake -E rm -rf build compile_commands.json"

@@ -1,0 +1,9 @@
+/build/
+/.pixi/
+
+/.clangd
+/compile_commands.json
+
+/.codex
+
+*.pdf
