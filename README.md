@@ -6,14 +6,14 @@ Build the compiler plugin:
 pixi run build
 ```
 
-Then use [lib.typ](/home/paran3xus/projects/rust/wwaassmm/lib.typ:1) from Typst:
+Then use `lib.typ` from Typst:
 
-```typ
+````typ
 #import "lib.typ": code-file, compile-project, export
 
 #let compiled = compile-project(
   (
-    code-file("src/main.c", ```c
+    code-file("main.c", ```c
       #include "typst/export.typst_plugin.h"
 
       static int add_impl(int a, int b) {
@@ -21,13 +21,12 @@ Then use [lib.typ](/home/paran3xus/projects/rust/wwaassmm/lib.typ:1) from Typst:
       }
     ```),
   ),
-  entry: "src/main.c",
+  entry: "main.c",
   exports: (
     export("add", args: ("int", "int"), ret: "int"),
-    export("hello", ret: "const char*"),
   ),
 )
-```
+````
 
 `compile-project(...)` now does four things:
 
