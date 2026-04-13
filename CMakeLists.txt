@@ -35,6 +35,17 @@ endif()
 
 message(STATUS "Using xcc source tree: ${XCC_SOURCE_DIR}")
 
+FetchContent_Declare(
+  tinycbor
+  GIT_REPOSITORY "https://github.com/intel/tinycbor.git"
+  GIT_TAG "v0.6.1"
+  GIT_SHALLOW FALSE
+)
+FetchContent_MakeAvailable(tinycbor)
+set(TINYCBOR_SOURCE_DIR "${tinycbor_SOURCE_DIR}")
+
+message(STATUS "Using TinyCBOR source tree: ${TINYCBOR_SOURCE_DIR}")
+
 
 set(XCC_SOURCE_DIRS
   "${XCC_SOURCE_DIR}/src/wcc"
@@ -60,13 +71,21 @@ collect_c_sources(
 
 list(REMOVE_ITEM XCC_EMBED_SOURCES
   "${XCC_SOURCE_DIR}/src/wcc/wcc.c"
+  "${XCC_SOURCE_DIR}/src/cpp/preprocessor.c"
   "${XCC_SOURCE_DIR}/src/cpp/cpp.c"
   "${XCC_SOURCE_DIR}/src/util/elfutil.c"
+)
+
+list(APPEND XCC_EMBED_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/preprocessor_vfs.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs.c"
 )
 
 set(XCC_PLUGIN_SUPPORT_SOURCES
   ${XCC_EMBED_SOURCES}
   "${CMAKE_CURRENT_SOURCE_DIR}/src/wasi_stub.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/tinycbor_parser.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/tinycbor_dup_string.c"
 )
 
 list(REMOVE_ITEM XCC_PLUGIN_SUPPORT_SOURCES "${XCC_SOURCE_DIR}/src/wcc/wasm_linker.c")
@@ -138,6 +157,8 @@ add_custom_command(
           -I${XCC_SOURCE_DIR}/src/cc/frontend
           -I${XCC_SOURCE_DIR}/src/wcc
           -I${XCC_SOURCE_DIR}/include
+          -I${CMAKE_CURRENT_SOURCE_DIR}/src/shims
+          -I${TINYCBOR_SOURCE_DIR}/src
           -o ${TYPST_XCC_COMPILER}
           --entry-point=
           -e compile
@@ -149,6 +170,8 @@ add_custom_command(
   DEPENDS
     compiler_wrapper
     "${CMAKE_CURRENT_SOURCE_DIR}/src/typst_xcc_compiler.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/preprocessor_vfs.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/wasi_stub.c"
     ${XCC_PLUGIN_SUPPORT_SOURCES}
   VERBATIM
