@@ -90,6 +90,65 @@ set(XCC_PLUGIN_SUPPORT_SOURCES
 
 list(REMOVE_ITEM XCC_PLUGIN_SUPPORT_SOURCES "${XCC_SOURCE_DIR}/src/wcc/wasm_linker.c")
 
+set(TYPST_XCC_COMPILER "${CMAKE_CURRENT_BINARY_DIR}/typst_xcc_compiler.wasm")
+set(TYPST_XCC_WLIBC "${XCC_SOURCE_DIR}/lib/wlibc.a")
+
+set(TYPST_XCC_PLUGIN_INCLUDE_DIRS
+  "${XCC_SOURCE_DIR}/src/util"
+  "${XCC_SOURCE_DIR}/src/cpp"
+  "${XCC_SOURCE_DIR}/src/cc/frontend"
+  "${XCC_SOURCE_DIR}/src/wcc"
+  "${XCC_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/shims"
+  "${TINYCBOR_SOURCE_DIR}/src"
+)
+set(TYPST_XCC_PLUGIN_COMPILE_DEFINITIONS
+  _GNU_SOURCE
+  XCC_TARGET_ARCH=XCC_ARCH_WASM
+)
+set(TYPST_XCC_PLUGIN_COMPILE_OPTIONS
+  -Wall
+  -Wextra
+  -Wno-missing-field-initializers
+  -Wno-empty-body
+  -Wno-unused-function
+)
+set(TYPST_XCC_PLUGIN_INCLUDE_FLAGS)
+foreach(dir IN LISTS TYPST_XCC_PLUGIN_INCLUDE_DIRS)
+  list(APPEND TYPST_XCC_PLUGIN_INCLUDE_FLAGS "-I${dir}")
+endforeach()
+set(TYPST_XCC_PLUGIN_OUTPUT_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/typst_xcc_compiler.c"
+  ${XCC_PLUGIN_SUPPORT_SOURCES}
+)
+set(TYPST_XCC_PLUGIN_WRAPPER_ARGS
+  ${TYPST_XCC_PLUGIN_INCLUDE_FLAGS}
+  -o "${TYPST_XCC_COMPILER}"
+  --entry-point=
+  -e compile
+  -Wl,--allow-undefined
+  -nostdlib
+  ${TYPST_XCC_PLUGIN_OUTPUT_SOURCES}
+  "${TYPST_XCC_WLIBC}"
+)
+
+add_library(typst_xcc_plugin_context INTERFACE)
+target_include_directories(
+  typst_xcc_plugin_context
+  INTERFACE
+    ${TYPST_XCC_PLUGIN_INCLUDE_DIRS}
+)
+target_compile_definitions(
+  typst_xcc_plugin_context
+  INTERFACE
+    ${TYPST_XCC_PLUGIN_COMPILE_DEFINITIONS}
+)
+target_compile_options(
+  typst_xcc_plugin_context
+  INTERFACE
+    ${TYPST_XCC_PLUGIN_COMPILE_OPTIONS}
+)
+
 # xcc as a library
 add_library(xcc_embed STATIC ${XCC_EMBED_SOURCES})
 target_include_directories(
@@ -100,17 +159,12 @@ target_include_directories(
 target_compile_definitions(
   xcc_embed
   PRIVATE
-    _GNU_SOURCE
-    XCC_TARGET_ARCH=XCC_ARCH_WASM
+    ${TYPST_XCC_PLUGIN_COMPILE_DEFINITIONS}
 )
 target_compile_options(
   xcc_embed
   PRIVATE
-    -Wall
-    -Wextra
-    -Wno-missing-field-initializers
-    -Wno-empty-body
-    -Wno-unused-function
+    ${TYPST_XCC_PLUGIN_COMPILE_OPTIONS}
 )
 
 add_executable(compiler_wrapper
@@ -131,8 +185,7 @@ target_compile_options(
 target_compile_definitions(
   compiler_wrapper
   PRIVATE
-    _GNU_SOURCE
-    XCC_TARGET_ARCH=XCC_ARCH_WASM
+    ${TYPST_XCC_PLUGIN_COMPILE_DEFINITIONS}
 )
 
 add_custom_target(show-xcc-source
@@ -140,40 +193,35 @@ add_custom_target(show-xcc-source
   VERBATIM
 )
 
-set(TYPST_XCC_COMPILER "${CMAKE_CURRENT_BINARY_DIR}/typst_xcc_compiler.wasm")
+# Mirror the custom wrapper compile context so clangd can discover headers for
+# src/typst_xcc_compiler.c via compile_commands.json.
+add_library(typst_xcc_compiler_ide OBJECT EXCLUDE_FROM_ALL
+  src/typst_xcc_compiler.c
+)
+target_link_libraries(typst_xcc_compiler_ide PRIVATE typst_xcc_plugin_context)
 
 # produce the final typst plugin
 # 1. build xcc's wasm libc with the embedded wrapper as the compiler driver
 # 2. compile src/typst_xcc_compiler.c into the wasm plugin artifact
 add_custom_command(
-  OUTPUT "${TYPST_XCC_COMPILER}"
+  OUTPUT "${TYPST_XCC_WLIBC}"
   COMMAND ${CMAKE_COMMAND} -E make_directory "${XCC_SOURCE_DIR}/lib"
   COMMAND ${CMAKE_COMMAND} -E env
           TYPST_XCC_ROOT=${XCC_SOURCE_DIR}
           make -C "${XCC_SOURCE_DIR}/libsrc" CC=$<TARGET_FILE:compiler_wrapper> AR=llvm-ar wcc-libs
-  COMMAND "$<TARGET_FILE:compiler_wrapper>"
-          -I${XCC_SOURCE_DIR}/src/util
-          -I${XCC_SOURCE_DIR}/src/cpp
-          -I${XCC_SOURCE_DIR}/src/cc/frontend
-          -I${XCC_SOURCE_DIR}/src/wcc
-          -I${XCC_SOURCE_DIR}/include
-          -I${CMAKE_CURRENT_SOURCE_DIR}/src/shims
-          -I${TINYCBOR_SOURCE_DIR}/src
-          -o ${TYPST_XCC_COMPILER}
-          --entry-point=
-          -e compile
-          -Wl,--allow-undefined
-          -nostdlib
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/typst_xcc_compiler.c
-          ${XCC_PLUGIN_SUPPORT_SOURCES}
-          ${XCC_SOURCE_DIR}/lib/wlibc.a
   DEPENDS
     compiler_wrapper
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/typst_xcc_compiler.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/preprocessor_vfs.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/wasi_stub.c"
-    ${XCC_PLUGIN_SUPPORT_SOURCES}
+  VERBATIM
+)
+
+add_custom_command(
+  OUTPUT "${TYPST_XCC_COMPILER}"
+  COMMAND "$<TARGET_FILE:compiler_wrapper>"
+          ${TYPST_XCC_PLUGIN_WRAPPER_ARGS}
+  DEPENDS
+    "${TYPST_XCC_WLIBC}"
+    ${TYPST_XCC_PLUGIN_OUTPUT_SOURCES}
+  COMMAND_EXPAND_LISTS
   VERBATIM
 )
 
