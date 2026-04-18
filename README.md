@@ -6,10 +6,10 @@ Build the compiler plugin:
 pixi run build
 ```
 
-Then use `lib.typ` from Typst:
+Then use `typ/lib.typ` from Typst:
 
 ````typ
-#import "lib.typ": code-file, compile-project, export
+#import "typ/lib.typ": code-file, compile-project, export
 
 #let compiled = compile-project(
   (

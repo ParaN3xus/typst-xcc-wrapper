@@ -1,4 +1,4 @@
-#import "lib.typ": code-file, compile-project, export
+#import "typ/lib.typ": code-file, compile-project, export
 
 #set page(height: auto)
 
@@ -36,6 +36,10 @@
     export("half", args: ("double",), ret: "double"),
   ),
 )
+
+Compile OK: #compiled.ok
+
+#let compiled = plugin(compiled.artifact)
 
 #let answer = compiled.add(20.to-bytes(size: 4), 22.to-bytes(size: 4))
 #let measured = compiled.measure(bytes("typst"))

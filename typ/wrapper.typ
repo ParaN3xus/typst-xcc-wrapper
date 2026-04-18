@@ -1,6 +1,3 @@
-#let default-compiler-path = "build/typst_xcc_compiler.wasm"
-#let default-export-header-path = "typst/export.typst_plugin.h"
-
 #let file(path, content) = (
   path: path,
   content: content,
@@ -19,32 +16,6 @@
     ret: ret,
     impl: if impl == none { name + "_impl" } else { impl },
   )
-}
-
-#let package(files, entry: none) = {
-  if entry == none {
-    cbor.encode(files)
-  } else {
-    cbor.encode((
-      entry: entry,
-      files: files,
-    ))
-  }
-}
-
-#let compile-result(source, compiler-path: default-compiler-path) = {
-  let compiler = plugin(compiler-path)
-  cbor(compiler.compile(source))
-}
-
-#let compile-bytes(source, compiler-path: default-compiler-path) = {
-  let result = compile-result(source, compiler-path: compiler-path)
-  if result.ok {
-    result.artifact
-  } else {
-    let message = result.diagnostics.map(diag => "[" + diag.level + "] " + diag.message).join("\n")
-    panic("C compilation failed:\n" + message)
-  }
 }
 
 #let _canonical-type(type) = type.replace(" ", "")
@@ -479,23 +450,4 @@
     wrappers,
     "\n",
   ).join("")
-}
-
-#let compile-project(
-  files,
-  entry: none,
-  exports: (),
-  export-header-path: default-export-header-path,
-  compiler-path: default-compiler-path,
-) = {
-  let all-files = if exports.len() == 0 {
-    files
-  } else {
-    (
-      ..files,
-      file(export-header-path, emit-export-header(exports)),
-    )
-  }
-
-  plugin(compile-bytes(package(all-files, entry: entry), compiler-path: compiler-path))
 }
