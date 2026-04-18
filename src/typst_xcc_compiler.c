@@ -13,6 +13,11 @@
 #undef main
 #include "wasm_linker.c"
 
+#if defined(__clang__)
+  #pragma clang diagnostic push
+  #pragma clang diagnostic ignored "-Wunknown-attributes"
+#endif
+
 __attribute__((import_module("typst_env"), import_name("wasm_minimal_protocol_write_args_to_buffer")))
 extern void wasm_minimal_protocol_write_args_to_buffer(uint8_t *ptr);
 
