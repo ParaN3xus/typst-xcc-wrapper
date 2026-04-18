@@ -1,5 +1,8 @@
+#include "wasi_stub.h"
+
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef uint8_t Preopentype;
@@ -26,6 +29,52 @@ typedef struct Filestat {
   Timestamp ctim;
 } Filestat;
 
+typedef struct {
+  const char *str;
+  size_t n;
+} Iov;
+
+static int g_typst_wasi_exit_code;
+static char *g_typst_wasi_diagnostics;
+static size_t g_typst_wasi_diagnostics_len;
+static size_t g_typst_wasi_diagnostics_cap;
+
+static int typst_wasi_append_diagnostics(const char *data, size_t len) {
+  if (data == NULL || len == 0)
+    return 0;
+
+  size_t required = g_typst_wasi_diagnostics_len + len + 1;
+  if (required > g_typst_wasi_diagnostics_cap) {
+    size_t next_cap = g_typst_wasi_diagnostics_cap != 0 ? g_typst_wasi_diagnostics_cap : 256;
+    while (next_cap < required)
+      next_cap *= 2;
+
+    char *next = realloc(g_typst_wasi_diagnostics, next_cap);
+    if (next == NULL)
+      return 1;
+    g_typst_wasi_diagnostics = next;
+    g_typst_wasi_diagnostics_cap = next_cap;
+  }
+
+  memcpy(g_typst_wasi_diagnostics + g_typst_wasi_diagnostics_len, data, len);
+  g_typst_wasi_diagnostics_len += len;
+  g_typst_wasi_diagnostics[g_typst_wasi_diagnostics_len] = '\0';
+  return 0;
+}
+
+void typst_wasi_reset_diagnostics(void) {
+  g_typst_wasi_exit_code = 0;
+  g_typst_wasi_diagnostics_len = 0;
+  if (g_typst_wasi_diagnostics != NULL)
+    g_typst_wasi_diagnostics[0] = '\0';
+}
+
+const char *typst_wasi_diagnostics(size_t *len) {
+  if (len != NULL)
+    *len = g_typst_wasi_diagnostics_len;
+  return g_typst_wasi_diagnostics;
+}
+
 int __main_argc_argv(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -47,7 +96,8 @@ int args_get(char **pargv, char *pstr) {
 }
 
 _Noreturn void proc_exit(int code) {
-  (void)code;
+  g_typst_wasi_exit_code = code;
+  *((volatile int*)0) = code;
   for (;;)
     ;
 }
@@ -109,12 +159,27 @@ int fd_read(int fd, const void *iov, int count, size_t *out) {
 }
 
 int fd_write(int fd, const void *iov, int count, size_t *out) {
-  (void)fd;
-  (void)iov;
-  (void)count;
+  const Iov *iovecs = iov;
+  size_t written = 0;
+
+  if (fd != 1 && fd != 2) {
+    if (out != NULL)
+      *out = 0;
+    return 1;
+  }
+
+  for (int i = 0; i < count; ++i) {
+    if (typst_wasi_append_diagnostics(iovecs[i].str, iovecs[i].n) != 0) {
+      if (out != NULL)
+        *out = written;
+      return 1;
+    }
+    written += iovecs[i].n;
+  }
+
   if (out != NULL)
-    *out = 0;
-  return 1;
+    *out = written;
+  return 0;
 }
 
 int fd_close(int fd) {

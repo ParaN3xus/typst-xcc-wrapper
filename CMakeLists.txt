@@ -84,6 +84,7 @@ list(APPEND XCC_EMBED_SOURCES
 set(XCC_PLUGIN_SUPPORT_SOURCES
   ${XCC_EMBED_SOURCES}
   "${CMAKE_CURRENT_SOURCE_DIR}/src/wasi_stub.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/tinycbor_encoder.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/tinycbor_parser.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/tinycbor_dup_string.c"
 )

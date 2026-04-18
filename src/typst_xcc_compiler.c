@@ -7,6 +7,7 @@
 
 #include "cbor.h"
 #include "vfs/vfs.h"
+#include "wasi_stub.h"
 
 #define main xcc_embedded_main
 #include "wcc.c"
@@ -37,6 +38,12 @@ typedef struct SourcePackage {
   size_t file_count;
   char *entry_path;
 } SourcePackage;
+
+typedef struct DiagnosticEntry {
+  const char *level;
+  const char *message;
+  size_t message_len;
+} DiagnosticEntry;
 
 static void append_predefined_macros(Vector *defines) {
   static const char *kPredefinedMacros[] = {
@@ -532,6 +539,153 @@ static int wrapper_compile_package_to_wasm_buffer(
   return result;
 }
 
+static bool is_wasm_binary(const unsigned char *data, size_t len) {
+  static const unsigned char kWasmMagic[] = {0x00, 0x61, 0x73, 0x6d};
+  return len >= sizeof(kWasmMagic) && memcmp(data, kWasmMagic, sizeof(kWasmMagic)) == 0;
+}
+
+static bool contains_substring_n(
+    const char *haystack, size_t haystack_len, const char *needle, size_t needle_len) {
+  if (needle_len == 0 || haystack_len < needle_len)
+    return false;
+
+  for (size_t i = 0; i + needle_len <= haystack_len; ++i) {
+    if (memcmp(haystack + i, needle, needle_len) == 0)
+      return true;
+  }
+  return false;
+}
+
+static const char *diagnostic_level_for_message(const char *message, size_t message_len) {
+  if (contains_substring_n(message, message_len, "warning", 7))
+    return "warning";
+  if (contains_substring_n(message, message_len, "note", 4))
+    return "note";
+  return "error";
+}
+
+static size_t collect_diagnostics(
+    const char *diagnostics,
+    size_t diagnostics_len,
+    const char *fallback_message,
+    DiagnosticEntry **out_entries) {
+  size_t count = 0;
+  if (diagnostics != NULL) {
+    const char *line = diagnostics;
+    const char *end = diagnostics + diagnostics_len;
+    while (line < end) {
+      const char *next = memchr(line, '\n', (size_t)(end - line));
+      if (next == NULL)
+        next = end;
+      if (next > line) {
+        ++count;
+      }
+      line = next < end ? next + 1 : end;
+    }
+  }
+
+  if (count == 0) {
+    DiagnosticEntry *entries = calloc_or_die(sizeof(*entries));
+    entries[0] = (DiagnosticEntry){
+      .level = "error",
+      .message = fallback_message,
+      .message_len = strlen(fallback_message),
+    };
+    *out_entries = entries;
+    return 1;
+  }
+
+  DiagnosticEntry *entries = calloc_or_die(sizeof(*entries) * count);
+  size_t index = 0;
+  const char *line = diagnostics;
+  const char *end = diagnostics + diagnostics_len;
+  while (line < end) {
+    const char *next = memchr(line, '\n', (size_t)(end - line));
+    if (next == NULL)
+      next = end;
+    if (next > line) {
+      entries[index++] = (DiagnosticEntry){
+        .level = diagnostic_level_for_message(line, (size_t)(next - line)),
+        .message = line,
+        .message_len = (size_t)(next - line),
+      };
+    }
+    line = next < end ? next + 1 : end;
+  }
+
+  *out_entries = entries;
+  return index;
+}
+
+static bool encode_compile_response(
+    bool ok,
+    const unsigned char *artifact,
+    size_t artifact_len,
+    const char *diagnostics,
+    size_t diagnostics_len,
+    const char *fallback_message,
+    unsigned char **out,
+    size_t *out_len) {
+  DiagnosticEntry *entries = NULL;
+  size_t entry_count = collect_diagnostics(diagnostics, diagnostics_len, fallback_message, &entries);
+  size_t capacity = artifact_len + diagnostics_len + entry_count * 96 + 512;
+  unsigned char *buffer = calloc_or_die(capacity);
+
+  CborEncoder encoder;
+  CborEncoder root;
+  CborEncoder diagnostics_array;
+  cbor_encoder_init(&encoder, buffer, capacity, 0);
+
+  CborError err = cbor_encoder_create_map(&encoder, &root, 3);
+  if (err == CborNoError)
+    err = cbor_encode_text_stringz(&root, "ok");
+  if (err == CborNoError)
+    err = cbor_encode_boolean(&root, ok);
+  if (err == CborNoError)
+    err = cbor_encode_text_stringz(&root, "artifact");
+  if (err == CborNoError) {
+    if (ok && artifact != NULL) {
+      err = cbor_encode_byte_string(&root, artifact, artifact_len);
+    } else {
+      err = cbor_encode_null(&root);
+    }
+  }
+  if (err == CborNoError)
+    err = cbor_encode_text_stringz(&root, "diagnostics");
+  if (err == CborNoError)
+    err = cbor_encoder_create_array(&root, &diagnostics_array, entry_count);
+
+  for (size_t i = 0; err == CborNoError && i < entry_count; ++i) {
+    CborEncoder item;
+    err = cbor_encoder_create_map(&diagnostics_array, &item, 2);
+    if (err == CborNoError)
+      err = cbor_encode_text_stringz(&item, "level");
+    if (err == CborNoError)
+      err = cbor_encode_text_stringz(&item, entries[i].level);
+    if (err == CborNoError)
+      err = cbor_encode_text_stringz(&item, "message");
+    if (err == CborNoError)
+      err = cbor_encode_text_string(&item, entries[i].message, entries[i].message_len);
+    if (err == CborNoError)
+      err = cbor_encoder_close_container(&diagnostics_array, &item);
+  }
+
+  if (err == CborNoError)
+    err = cbor_encoder_close_container(&root, &diagnostics_array);
+  if (err == CborNoError)
+    err = cbor_encoder_close_container(&encoder, &root);
+
+  free(entries);
+  if (err != CborNoError) {
+    free(buffer);
+    return false;
+  }
+
+  *out = buffer;
+  *out_len = cbor_encoder_get_buffer_size(&encoder, buffer);
+  return true;
+}
+
 int compile(size_t source_len) {
   uint8_t *source = malloc(source_len + 1);
   if (source == NULL)
@@ -542,9 +696,12 @@ int compile(size_t source_len) {
 
   unsigned char *output = NULL;
   size_t output_size = 0;
+  unsigned char *response = NULL;
+  size_t response_size = 0;
   int result = 0;
 
   SourcePackage package;
+  typst_wasi_reset_diagnostics();
   if (parse_source_package(source, source_len, &package)) {
     result = wrapper_compile_package_to_wasm_buffer(&package, &output, &output_size);
     free_source_package(&package);
@@ -553,10 +710,26 @@ int compile(size_t source_len) {
   }
 
   free(source);
-  if (result != 0 || output == NULL)
-    return 1;
+  size_t diagnostics_len = 0;
+  const char *diagnostics = typst_wasi_diagnostics(&diagnostics_len);
+  bool ok = result == 0 && output != NULL && is_wasm_binary(output, output_size);
+  const char *fallback_message = "C compilation failed";
 
-  wasm_minimal_protocol_send_result_to_host(output, output_size);
+  if (!encode_compile_response(
+          ok,
+          ok ? output : NULL,
+          ok ? output_size : 0,
+          diagnostics,
+          diagnostics_len,
+          fallback_message,
+          &response,
+          &response_size)) {
+    free(output);
+    return 1;
+  }
+
+  wasm_minimal_protocol_send_result_to_host(response, response_size);
+  free(response);
   free(output);
   return 0;
 }

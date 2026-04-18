@@ -32,9 +32,19 @@
   }
 }
 
-#let compile-bytes(source, compiler-path: default-compiler-path) = {
+#let compile-result(source, compiler-path: default-compiler-path) = {
   let compiler = plugin(compiler-path)
-  compiler.compile(source)
+  cbor(compiler.compile(source))
+}
+
+#let compile-bytes(source, compiler-path: default-compiler-path) = {
+  let result = compile-result(source, compiler-path: compiler-path)
+  if result.ok {
+    result.artifact
+  } else {
+    let message = result.diagnostics.map(diag => "[" + diag.level + "] " + diag.message).join("\n")
+    panic("C compilation failed:\n" + message)
+  }
 }
 
 #let _canonical-type(type) = type.replace(" ", "")
