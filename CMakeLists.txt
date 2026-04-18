@@ -77,15 +77,15 @@ list(REMOVE_ITEM XCC_EMBED_SOURCES
 )
 
 list(APPEND XCC_EMBED_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/preprocessor_vfs.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs/preprocessor_vfs.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs/vfs.c"
 )
 
 set(XCC_PLUGIN_SUPPORT_SOURCES
   ${XCC_EMBED_SOURCES}
   "${CMAKE_CURRENT_SOURCE_DIR}/src/wasi_stub.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/tinycbor_parser.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/tinycbor_dup_string.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/tinycbor_parser.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/tinycbor_dup_string.c"
 )
 
 list(REMOVE_ITEM XCC_PLUGIN_SUPPORT_SOURCES "${XCC_SOURCE_DIR}/src/wcc/wasm_linker.c")
@@ -99,7 +99,10 @@ set(TYPST_XCC_PLUGIN_INCLUDE_DIRS
   "${XCC_SOURCE_DIR}/src/cc/frontend"
   "${XCC_SOURCE_DIR}/src/wcc"
   "${XCC_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/shims"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/vfs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cbor/shims"
   "${TINYCBOR_SOURCE_DIR}/src"
 )
 set(TYPST_XCC_PLUGIN_COMPILE_DEFINITIONS

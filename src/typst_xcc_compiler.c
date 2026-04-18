@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "cbor.h"
-#include "vfs.h"
+#include "vfs/vfs.h"
 
 #define main xcc_embedded_main
 #include "wcc.c"
