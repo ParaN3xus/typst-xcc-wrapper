@@ -56,7 +56,7 @@ const TypstVfsFile *typst_vfs_find(const char *path) {
 FILE *typst_vfs_fopen(const char *path, const char *mode) {
   const TypstVfsFile *file = typst_vfs_find(path);
   if (file == NULL)
-    return fopen(path, mode);
+    return typst_vfs_is_active() ? NULL : fopen(path, mode);
 
   if (mode == NULL || mode[0] != 'r')
     return NULL;
@@ -67,6 +67,8 @@ FILE *typst_vfs_fopen(const char *path, const char *mode) {
 bool typst_vfs_is_file(const char *path) {
   if (typst_vfs_find(path) != NULL)
     return true;
+  if (typst_vfs_is_active())
+    return false;
   return is_file(path);
 }
 
